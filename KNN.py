@@ -8,9 +8,11 @@ from sklearn import decomposition
 from sklearn.metrics import average_precision_score
 import pickle
 from sklearn.metrics import precision_recall_curve
+import time
 
 
-TEST = 1
+TEST = 0
+STEP = 50
 class kNN():
     def __init__(self):
         self.pair_distances = None
@@ -49,8 +51,7 @@ def average_precisiion(score, y, draw=False):
     #while(len(p)> 0):
     #    precision[p] = precision[p+1]
     #    p = np.where(np.diff(precision) > 0)[0]
-    precision = np.maximum.accumulate(precision)
-    precision = precision[::-1]
+    precision = np.maximum.accumulate(precision)[::-1]
 
     #AP = (np.diff(recall) * precision).sum() + recall[0]*precision[0]
     AP = np.trapz(precision, recall)
@@ -75,7 +76,7 @@ else:
     SAT = '/home/warlock/projects/third_sem/anomaly_detection/sat'
 
 
-DATASET = SAT#MAMMOGRAPHY
+DATASET = MAMMOGRAPHY
 if __name__ == "__main__":
     global Y
     #file = h5py.File(DATASET, 'r')
@@ -129,15 +130,24 @@ if __name__ == "__main__":
         d = pd.DataFrame(pca_X, columns=['x','y'])
 
     #validating...
-    print("validating...")
+    start = time.time()
+
+    print(f"validating...")
+
     max_ap, max_prc, max_k, edges_score = 0, None, 0, None
-    for k in range(1, len(X) - 1):
+    AP_curve = []
+    for k in [10001]:#range(1, len(X) - 1, STEP):
+        start_iter = time.time()
         score = knn.score(k)
         skap = average_precision_score(Y,score)
         ap, prc, edges = average_precisiion(score, Y, draw=False)
+        AP_curve.append(ap)
         if ap > max_ap:
             max_ap, max_prc, max_k, edges_score, max_score = ap, prc, k, edges, score
-            print(f"\tnew Max AP: {max_ap} k={max_k} sklearn_AP:{skap}")
+            print(f"\tnew Max AP: {max_ap} k={max_k} sklearn_AP:{skap} iteration_time: {time.time() - start_iter}s")
+
+    end = time.time()
+    print(f"full time is {end - start}s. Time to 1 iteration is {(end - start)/ (len(X)-1)}s")
 
     f1_score = [pr*rec/(pr+rec) for pr, rec in max_prc] #
     maxf1 = max(f1_score)
@@ -145,17 +155,24 @@ if __name__ == "__main__":
     edge = edges_score[index_of_maxf1]
     labels = np.zeros(len(X))
     labels[max_score >= edge] = 1
-    labels[Y == 1] += 2 # 1 - FP, 2 - FN, 3 - TP
+    labels[Y == 1] += 2 # 0 - TN, 1 - FP, 2 - FN, 3 - TP
     tp, fp, fn, tn = (labels == 3).sum(), (labels == 1).sum(), (labels == 2).sum(), (labels == 0).sum()
     print(f"TP={tp} FP={fp} FN={fn} TN={tn}")
     confusion_matrix = np.array([[tp, fp],[fn, tn]])
-    print(f"confusion matrix:\n{confusion_matrix}")
+    print(f"confusion matrix:\n{confusion_matrix}\n")
+    print(f"conf matrix is percent: \n{confusion_matrix / confusion_matrix.sum(axis=1).reshape(-1,1)}\n")
 
     print(f"precision={tp/(tp+fp)} recall={tp/(tp+fn)}")
 
     print(f"result: k={max_k}, f1={2 * maxf1}, anomaly_edge={edge}")
 
+
     plt.figure()
+    if False:
+        plt.plot([i for i in range(1, len(X) - 1, STEP)], AP_curve, 'm-')
+        plt.xlabel("k")
+        plt.ylabel("AP")
+        plt.show()
     last = max_prc[0]
     for i in range(1, len(max_prc)):
         cur = max_prc[i]
@@ -169,6 +186,7 @@ if __name__ == "__main__":
 
     d['cl'] = labels
     d.plot.scatter('x','y', c='cl', colormap='rainbow')
+    plt.xlabel(" 0 - TN, 1 - FP, 2 - FN, 3 - TP")
 
 
     plt.show()
